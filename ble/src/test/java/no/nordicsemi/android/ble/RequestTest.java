@@ -24,12 +24,17 @@ package no.nordicsemi.android.ble;
 
 import android.bluetooth.BluetoothGattCharacteristic;
 
+import androidx.annotation.NonNull;
+
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.UUID;
 
-import androidx.annotation.NonNull;
+import no.nordicsemi.android.converted.callback.CallbackHandler;
+import ReadRequest;
+import no.nordicsemi.android.converted.requests.base.Request;
+import WriteRequest;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -77,8 +82,13 @@ public class RequestTest {
 
 	@Test
 	public void split_basic() {
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-				.split();
+
+		byte[] data = text.getBytes();
+
+		final WriteRequest request = new WriteRequest(
+				Request.Type.ABORT_RELIABLE_WRITE,
+				characteristic, data, data != null ? data.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT).split();
+
 		chunk = request.getData(MTU);
 
 		// Verify the chunk
@@ -90,10 +100,15 @@ public class RequestTest {
 
 	@Test
 	public void split_highMtu() {
+
 		final int MTU_HIGH = 276;
 
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
-				.split();
+		byte[] data = text.getBytes();
+
+		final WriteRequest request = new WriteRequest(
+				Request.Type.ABORT_RELIABLE_WRITE,
+				characteristic, data, data != null ? data.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE).split();
+
 		chunk = request.getData(MTU_HIGH);
 		// Verify the chunk
 		assertNotNull(chunk);
@@ -105,7 +120,10 @@ public class RequestTest {
 	@Test
 	public void split_callbacks() {
 		// Create a WriteRequest with the default splitter and custom progress and success callbacks
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+		byte[] bytes = text.getBytes();
+		final WriteRequest request = new WriteRequest(
+				Request.Type.ABORT_RELIABLE_WRITE,
+				characteristic, bytes, bytes != null ? bytes.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
 				.split((device, data, index) -> {
 					// Validate the progress callback
 					called = true;
@@ -122,7 +140,7 @@ public class RequestTest {
 			chunk = request.getData(MTU);
 			if (chunk != null) {
 				// If there are bytes to send, let's assume they were sent:
-				// Sending data...
+				// Sending bytes...
 				// Data sent
 
 				// Notify request that the packet was sent. This will increment count value
@@ -144,12 +162,16 @@ public class RequestTest {
 	@Test
 	public void split_merge() {
 		// The WriteRequest is only to split the text into chunks
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-				.split();
+		byte[] bytes = text.getBytes();
+		final WriteRequest request = new WriteRequest(
+				Request.Type.ABORT_RELIABLE_WRITE,
+				characteristic, bytes, bytes != null ? bytes.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT).split();
+
 		request.handler = new SynchronousHandler();
 
 		// Create ReadRequest that will merge packets until the complete text is in the stream
-		final ReadRequest readRequest = Request.newReadRequest(characteristic)
+
+		final ReadRequest readRequest = new ReadRequest(Request.Type.READ,characteristic)
 				.merge((output, lastPacket, index) -> {
 					// Simply copy all bytes from the lastPacket to the stream
 					output.write(lastPacket);
@@ -162,7 +184,7 @@ public class RequestTest {
 					assertTrue(data.length <= MTU - 3);
 				})
 				.with((device, data) -> {
-					// This should contain the whole data
+					// This should contain the whole bytes
 					done = true;
 					assertArrayEquals(text.getBytes(), data.getValue());
 				})
@@ -176,7 +198,7 @@ public class RequestTest {
 			chunk = request.getData(MTU);
 			if (chunk != null) {
 				// If there are bytes to send, let's assume they were sent:
-				// Sending data...
+				// Sending bytes...
 				// Data sent
 
 				// Notify request that the packet was sent. This will increment count value
@@ -189,7 +211,7 @@ public class RequestTest {
 				assertTrue(called);
 			}
 		} while (request.hasMore());
-		// Verify that the data callback was called
+		// Verify that the bytes callback was called
 		assertTrue(done);
 
 		// Verify that the success callback is called
