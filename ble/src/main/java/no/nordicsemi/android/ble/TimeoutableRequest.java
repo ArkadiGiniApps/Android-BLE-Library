@@ -77,21 +77,6 @@ public abstract class TimeoutableRequest extends Request {
 	}
 
 	/**
-	 * Enqueues the request for asynchronous execution.
-	 * <p>
-	 * When the timeout occurs, the request will fail with {@link FailCallback#REASON_TIMEOUT}
-	 * and the device will get disconnected.
-	 *
-	 * @param timeout the request timeout in milliseconds, 0 to disable timeout. This value will
-	 *                override one set in {@link #timeout(long)}.
-	 * @deprecated Use {@link #timeout(long)} and {@link #enqueue()} instead.
-	 */
-	@Deprecated
-	public final void enqueue(@IntRange(from = 0) final long timeout) {
-		timeout(timeout).enqueue();
-	}
-
-	/**
 	 * Synchronously waits until the request is done.
 	 * <p>
 	 * Use {@link #timeout(long)} to set the maximum time the manager should wait until the request
@@ -147,38 +132,7 @@ public abstract class TimeoutableRequest extends Request {
 		}
 	}
 
-	/**
-	 * Synchronously waits, for as most as the given number of milliseconds, until the request
-	 * is ready.
-	 * <p>
-	 * When the timeout occurs, the {@link InterruptedException} will be thrown.
-	 * <p>
-	 * Callbacks set using {@link #done(SuccessCallback)} and {@link #fail(FailCallback)}
-	 * will be ignored.
-	 * <p>
-	 * This method may not be called from the main (UI) thread.
-	 *
-	 * @param timeout optional timeout in milliseconds, 0 to disable timeout. This will
-	 *                override the timeout set using {@link #timeout(long)}.
-	 * @throws RequestFailedException      thrown when the BLE request finished with status other
-	 *                                     than {@link BluetoothGatt#GATT_SUCCESS}.
-	 * @throws InterruptedException        thrown if the timeout occurred before the request has
-	 *                                     finished.
-	 * @throws IllegalStateException       thrown when you try to call this method from the main
-	 *                                     (UI) thread.
-	 * @throws DeviceDisconnectedException thrown when the device disconnected before the request
-	 *                                     was completed.
-	 * @throws BluetoothDisabledException  thrown when the Bluetooth adapter has been disabled.
-	 * @throws InvalidRequestException     thrown when the request was called before the device was
-	 *                                     connected at least once (unknown device).
-	 * @deprecated Use {@link #timeout(long)} and {@link #await()} instead.
-	 */
-	@Deprecated
-	public final void await(@IntRange(from = 0) final long timeout) throws RequestFailedException,
-			InterruptedException, DeviceDisconnectedException, BluetoothDisabledException,
-			InvalidRequestException {
-		timeout(timeout).await();
-	}
+
 
 	@Override
 	void notifyStarted(@NonNull final BluetoothDevice device) {

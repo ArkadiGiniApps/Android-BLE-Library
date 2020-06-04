@@ -35,20 +35,19 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import java.util.UUID;
-
 import androidx.annotation.IntRange;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.StringRes;
+
+import java.util.UUID;
+
 import no.nordicsemi.android.ble.annotation.ConnectionPriority;
 import no.nordicsemi.android.ble.annotation.ConnectionState;
 import no.nordicsemi.android.ble.annotation.PairingVariant;
 import no.nordicsemi.android.ble.annotation.PhyMask;
 import no.nordicsemi.android.ble.annotation.PhyOption;
-import no.nordicsemi.android.ble.observer.BondingObserver;
-import no.nordicsemi.android.ble.observer.ConnectionObserver;
 import no.nordicsemi.android.ble.callback.ConnectionPriorityCallback;
 import no.nordicsemi.android.ble.callback.FailCallback;
 import no.nordicsemi.android.ble.callback.MtuCallback;
@@ -57,6 +56,8 @@ import no.nordicsemi.android.ble.data.Data;
 import no.nordicsemi.android.ble.data.DataMerger;
 import no.nordicsemi.android.ble.data.DataSplitter;
 import no.nordicsemi.android.ble.error.GattError;
+import no.nordicsemi.android.ble.observer.BondingObserver;
+import no.nordicsemi.android.ble.observer.ConnectionObserver;
 import no.nordicsemi.android.ble.utils.ILogger;
 import no.nordicsemi.android.ble.utils.ParserUtils;
 
@@ -114,9 +115,6 @@ public abstract class BleManager implements ILogger {
 	private BleServerManager serverManager;
 	@NonNull
 	final BleManager.BleManagerGattCallback requestHandler;
-	/** Manager callbacks, set using {@link #setGattCallbacks(BleManagerCallbacks)}. */
-	@Deprecated
-	protected BleManagerCallbacks callbacks;
 	@Nullable
 	BondingObserver bondingObserver;
 	@Nullable
@@ -198,17 +196,6 @@ public abstract class BleManager implements ILogger {
 	 */
 	protected void runOnCallbackThread(@NonNull final Runnable runnable) {
 		requestHandler.post(runnable);
-	}
-
-	/**
-	 * Sets the manager callback listener.
-	 *
-	 * @param callbacks the callback listener.
-	 * @deprecated Use per-request callbacks.
-	 */
-	@Deprecated
-	public void setGattCallbacks(@NonNull final BleManagerCallbacks callbacks) {
-		this.callbacks = callbacks;
 	}
 
 	/**
@@ -350,22 +337,6 @@ public abstract class BleManager implements ILogger {
 		return requestHandler.getConnectionState();
 	}
 
-	/**
-	 * Returns the last received value of Battery Level characteristic, or -1 if such
-	 * does not exist, hasn't been read or notification wasn't received yet.
-	 * <p>
-	 * The value returned will be invalid if overridden {@link #readBatteryLevel()} and
-	 * {@link #enableBatteryLevelNotifications()} were used.
-	 *
-	 * @return The last battery level value in percent.
-	 * @deprecated Keep the battery level in your manager instead.
-	 */
-	@IntRange(from = -1, to = 100)
-	@Deprecated
-	public final int getBatteryValue() {
-		return requestHandler.getBatteryValue();
-	}
-
 	@Override
 	public void log(final int priority, @NonNull final String message) {
 		// Override to log events. Simple log can use Logcat:
@@ -389,38 +360,6 @@ public abstract class BleManager implements ILogger {
 					@Nullable final Object... params) {
 		final String message = context.getString(messageRes, params);
 		log(priority, message);
-	}
-
-	/**
-	 * Returns whether to connect to the remote device just once (false) or to add the address to
-	 * white list of devices that will be automatically connect as soon as they become available
-	 * (true). In the latter case, if Bluetooth adapter is enabled, Android scans periodically
-	 * for devices from the white list and if a advertising packet is received from such, it tries
-	 * to connect to it. When the connection is lost, the system will keep trying to reconnect to
-	 * it in. If true is returned, and the connection to the device is lost the
-	 * {@link BleManagerCallbacks#onLinkLossOccurred(BluetoothDevice)} callback is called instead of
-	 * {@link BleManagerCallbacks#onDeviceDisconnected(BluetoothDevice)}.
-	 * <p>
-	 * This feature works much better on newer Android phone models and many not work on older
-	 * phones.
-	 * <p>
-	 * This method should only be used with bonded devices, as otherwise the device may change
-	 * it's address. It will however work also with non-bonded devices with private static address.
-	 * A connection attempt to a device with private resolvable address will fail.
-	 * <p>
-	 * The first connection to a device will always be created with autoConnect flag to false
-	 * (see {@link BluetoothDevice#connectGatt(Context, boolean, BluetoothGattCallback)}). This is
-	 * to make it quick as the user most probably waits for a quick response.
-	 * However, if this method returned true during first connection and the link was lost,
-	 * the manager will try to reconnect to it using {@link BluetoothGatt#connect()} which forces
-	 * autoConnect to true.
-	 *
-	 * @return The AutoConnect flag value.
-	 * @deprecated Use {@link ConnectRequest#useAutoConnect(boolean)} instead.
-	 */
-	@Deprecated
-	protected boolean shouldAutoConnect() {
-		return false;
 	}
 
 	/**
@@ -509,47 +448,6 @@ public abstract class BleManager implements ILogger {
 			throw new NullPointerException("Bluetooth device not specified");
 		}
 		return Request.connect(device)
-				.useAutoConnect(shouldAutoConnect())
-				.setRequestHandler(requestHandler);
-	}
-
-	/**
-	 * Creates a Connect request that will try to connect to the given Bluetooth LE device using
-	 * preferred PHY. Call {@link ConnectRequest#enqueue()} or {@link ConnectRequest#await()}
-	 * in order to execute the request.
-	 * <p>
-	 * This method returns a {@link ConnectRequest} which can be used to set completion
-	 * and failure callbacks. The completion callback will be called after the initialization
-	 * is complete, after {@link BleManagerCallbacks#onDeviceReady(BluetoothDevice)} has been
-	 * called.
-	 * <p>
-	 * Calling {@link ConnectRequest#await()} will make this request
-	 * synchronous (the callbacks set will be ignored, instead the synchronous method will
-	 * return or throw an exception).
-	 * <p>
-	 * For asynchronous call usage, {@link ConnectRequest#enqueue()} must be called on the returned
-	 * request.
-	 *
-	 * @param device a device to connect to.
-	 * @param phy    preferred PHY for connections to remote LE device. Bitwise OR of any of
-	 *               {@link PhyRequest#PHY_LE_1M_MASK}, {@link PhyRequest#PHY_LE_2M_MASK},
-	 *               and {@link PhyRequest#PHY_LE_CODED_MASK}. This option does not take effect
-	 *               if {@code autoConnect} is set to true. PHY 2M and Coded are supported
-	 *               on newer devices running Android Oreo or newer.
-	 * @return The connect request.
-	 * @deprecated Use {@link #connect(BluetoothDevice)} instead and set preferred PHY using
-	 * {@link ConnectRequest#usePreferredPhy(int)}.
-	 */
-	@SuppressWarnings("ConstantConditions")
-	@NonNull
-	@Deprecated
-	public final ConnectRequest connect(@NonNull final BluetoothDevice device, @PhyMask final int phy) {
-		if (device == null) {
-			throw new NullPointerException("Bluetooth device not specified");
-		}
-		return Request.connect(device)
-				.usePreferredPhy(phy)
-				.useAutoConnect(shouldAutoConnect())
 				.setRequestHandler(requestHandler);
 	}
 
@@ -579,7 +477,8 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected Request createBond() {
-		return Request.createBond().setRequestHandler(requestHandler);
+		return new SimpleRequest(Request.Type.CREATE_BOND)
+				.setRequestHandler(requestHandler);
 	}
 
 	/**
@@ -597,7 +496,8 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected Request removeBond() {
-		return Request.removeBond().setRequestHandler(requestHandler);
+		return new SimpleRequest(Request.Type.REMOVE_BOND)
+				.setRequestHandler(requestHandler);
 	}
 
 	/**
@@ -724,7 +624,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected WaitForValueChangedRequest waitForNotification(@Nullable final BluetoothGattCharacteristic characteristic) {
-		return Request.newWaitForNotificationRequest(characteristic)
+		return new WaitForValueChangedRequest(Request.Type.WAIT_FOR_NOTIFICATION, characteristic)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -744,7 +644,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected WaitForValueChangedRequest waitForIndication(@Nullable final BluetoothGattCharacteristic characteristic) {
-		return Request.newWaitForIndicationRequest(characteristic)
+		return new WaitForValueChangedRequest(Request.Type.WAIT_FOR_INDICATION, characteristic)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1127,7 +1027,7 @@ public abstract class BleManager implements ILogger {
 	@NonNull
 	protected WriteRequest enableNotifications(
 			@Nullable final BluetoothGattCharacteristic characteristic) {
-		return Request.newEnableNotificationsRequest(characteristic)
+		return new WriteRequest(Request.Type.ENABLE_NOTIFICATIONS, characteristic)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1144,7 +1044,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected WriteRequest disableNotifications(@Nullable final BluetoothGattCharacteristic characteristic) {
-		return Request.newDisableNotificationsRequest(characteristic)
+		return new WriteRequest(Request.Type.DISABLE_NOTIFICATIONS, characteristic)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1161,7 +1061,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected WriteRequest enableIndications(@Nullable final BluetoothGattCharacteristic characteristic) {
-		return Request.newEnableIndicationsRequest(characteristic)
+		return new WriteRequest(Request.Type.ENABLE_INDICATIONS, characteristic)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1178,7 +1078,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected WriteRequest disableIndications(@Nullable final BluetoothGattCharacteristic characteristic) {
-		return Request.newDisableIndicationsRequest(characteristic)
+		return new WriteRequest(Request.Type.DISABLE_INDICATIONS, characteristic)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1195,7 +1095,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected ReadRequest readCharacteristic(@Nullable final BluetoothGattCharacteristic characteristic) {
-		return Request.newReadRequest(characteristic)
+		return  new ReadRequest(Request.Type.READ, characteristic)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1218,8 +1118,8 @@ public abstract class BleManager implements ILogger {
 	@NonNull
 	protected WriteRequest writeCharacteristic(@Nullable final BluetoothGattCharacteristic characteristic,
 											   @Nullable final Data data) {
-		return Request.newWriteRequest(characteristic, data != null ? data.getValue() : null)
-				.setRequestHandler(requestHandler);
+
+		return writeCharacteristic(characteristic, data != null ? data.getValue() : null);
 	}
 
 	/**
@@ -1241,8 +1141,8 @@ public abstract class BleManager implements ILogger {
 	@NonNull
 	protected WriteRequest writeCharacteristic(@Nullable final BluetoothGattCharacteristic characteristic,
 											   @Nullable final byte[] data) {
-		return Request.newWriteRequest(characteristic, data)
-				.setRequestHandler(requestHandler);
+
+		return writeCharacteristic(characteristic, data, 0, data != null ? data.length : 0);
 	}
 
 	/**
@@ -1267,7 +1167,11 @@ public abstract class BleManager implements ILogger {
 	@NonNull
 	protected WriteRequest writeCharacteristic(@Nullable final BluetoothGattCharacteristic characteristic,
 											   @Nullable final byte[] data, final int offset, final int length) {
-		return Request.newWriteRequest(characteristic, data, offset, length)
+
+		return new WriteRequest(Request.Type.WRITE, characteristic, data, offset, length,
+				characteristic != null ?
+						characteristic.getWriteType() :
+						BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1284,7 +1188,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@NonNull
 	protected ReadRequest readDescriptor(@Nullable final BluetoothGattDescriptor descriptor) {
-		return Request.newReadRequest(descriptor)
+		return new ReadRequest(Request.Type.READ_DESCRIPTOR, descriptor)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1307,8 +1211,7 @@ public abstract class BleManager implements ILogger {
 	@NonNull
 	protected WriteRequest writeDescriptor(@Nullable final BluetoothGattDescriptor descriptor,
 										   @Nullable final Data data) {
-		return Request.newWriteRequest(descriptor, data != null ? data.getValue() : null)
-				.setRequestHandler(requestHandler);
+		return writeDescriptor(descriptor, data != null ? data.getValue() : null);
 	}
 
 	/**
@@ -1330,8 +1233,8 @@ public abstract class BleManager implements ILogger {
 	@NonNull
 	protected WriteRequest writeDescriptor(@Nullable final BluetoothGattDescriptor descriptor,
 										   @Nullable final byte[] data) {
-		return Request.newWriteRequest(descriptor, data)
-				.setRequestHandler(requestHandler);
+		return writeDescriptor(descriptor, data, 0, data != null ? data.length : 0);
+
 	}
 
 	/**
@@ -1356,7 +1259,7 @@ public abstract class BleManager implements ILogger {
 	protected WriteRequest writeDescriptor(@Nullable final BluetoothGattDescriptor descriptor,
 										   @Nullable final byte[] data, final int offset,
 										   final int length) {
-		return Request.newWriteRequest(descriptor, data, offset, length)
+		return new WriteRequest(Request.Type.WRITE_DESCRIPTOR, descriptor, data, offset, length)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1574,47 +1477,6 @@ public abstract class BleManager implements ILogger {
 	}
 
 	/**
-	 * Reads the battery level from the device.
-	 *
-	 * @deprecated Use {@link #readCharacteristic(BluetoothGattCharacteristic)} instead.
-	 */
-	@Deprecated
-	protected void readBatteryLevel() {
-		Request.newReadBatteryLevelRequest()
-				.setRequestHandler(requestHandler)
-				.with(requestHandler.getBatteryLevelCallback())
-				.enqueue();
-	}
-
-	/**
-	 * This method enables notifications on the Battery Level characteristic.
-	 *
-	 * @deprecated Use {@link #setNotificationCallback(BluetoothGattCharacteristic)} and
-	 * {@link #enableNotifications(BluetoothGattCharacteristic)} instead.
-	 */
-	@Deprecated
-	protected void enableBatteryLevelNotifications() {
-		Request.newEnableBatteryLevelNotificationsRequest()
-				.setRequestHandler(requestHandler)
-				.before(device -> requestHandler.setBatteryLevelNotificationCallback())
-				.done(device -> log(Log.INFO, "Battery Level notifications enabled"))
-				.enqueue();
-	}
-
-	/**
-	 * This method disables notifications on the Battery Level characteristic.
-	 *
-	 * @deprecated Use {@link #disableNotifications(BluetoothGattCharacteristic)} instead.
-	 */
-	@Deprecated
-	protected void disableBatteryLevelNotifications() {
-		Request.newDisableBatteryLevelNotificationsRequest()
-				.setRequestHandler(requestHandler)
-				.done(device -> log(Log.INFO, "Battery Level notifications disabled"))
-				.enqueue();
-	}
-
-	/**
 	 * Requests new MTU. On Android Lollipop or newer it will send the MTU request to the connected
 	 * device. On older versions of Android the
 	 * {@link MtuCallback#onMtuChanged(BluetoothDevice, int)} set with
@@ -1626,7 +1488,8 @@ public abstract class BleManager implements ILogger {
 	 * @return The request.
 	 */
 	protected MtuRequest requestMtu(@IntRange(from = 23, to = 517) final int mtu) {
-		return Request.newMtuRequest(mtu).setRequestHandler(requestHandler);
+		return new MtuRequest(Request.Type.REQUEST_MTU, mtu)
+				.setRequestHandler(requestHandler);
 	}
 
 	/**
@@ -1686,7 +1549,7 @@ public abstract class BleManager implements ILogger {
 	@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
 	protected ConnectionPriorityRequest requestConnectionPriority(
 			@ConnectionPriority final int priority) {
-		return Request.newConnectionPriorityRequest(priority)
+		return new ConnectionPriorityRequest(Request.Type.REQUEST_CONNECTION_PRIORITY, priority)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1713,7 +1576,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	protected PhyRequest setPreferredPhy(@PhyMask final int txPhy, @PhyMask final int rxPhy,
 										 @PhyOption final int phyOptions) {
-		return Request.newSetPreferredPhyRequest(txPhy, rxPhy, phyOptions)
+		return new PhyRequest(Request.Type.SET_PREFERRED_PHY, txPhy, rxPhy, phyOptions)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1730,7 +1593,7 @@ public abstract class BleManager implements ILogger {
 	 * @return The request.
 	 */
 	protected PhyRequest readPhy() {
-		return Request.newReadPhyRequest()
+		return new PhyRequest(Request.Type.READ_PHY)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1743,7 +1606,8 @@ public abstract class BleManager implements ILogger {
 	 * @return The request.
 	 */
 	protected ReadRssiRequest readRssi() {
-		return Request.newReadRssiRequest().setRequestHandler(requestHandler);
+		return new ReadRssiRequest(Request.Type.READ_RSSI)
+				.setRequestHandler(requestHandler);
 	}
 
 	/**
@@ -1765,7 +1629,7 @@ public abstract class BleManager implements ILogger {
 	 */
 	@SuppressWarnings("JavadocReference")
 	protected Request refreshDeviceCache() {
-		return Request.newRefreshCacheRequest()
+		return new SimpleRequest(Request.Type.REFRESH_CACHE)
 				.setRequestHandler(requestHandler);
 	}
 
@@ -1780,18 +1644,7 @@ public abstract class BleManager implements ILogger {
 	 * @return The request.
 	 */
 	protected SleepRequest sleep(@IntRange(from = 0) final long delay) {
-		return Request.newSleepRequest(delay).setRequestHandler(requestHandler);
-	}
-
-	/**
-	 * Enqueues a new request.
-	 *
-	 * @param request the new request to be added to the end of the queue.
-	 * @deprecated This way of enqueueing requests is deprecated, use above methods instead.
-	 */
-	@Deprecated
-	protected final void enqueue(@NonNull final Request request) {
-		requestHandler.enqueue(request);
+		return new SleepRequest(Request.Type.SLEEP, delay).setRequestHandler(requestHandler);
 	}
 
 	/**

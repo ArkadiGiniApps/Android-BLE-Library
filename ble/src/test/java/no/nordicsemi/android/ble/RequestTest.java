@@ -24,12 +24,12 @@ package no.nordicsemi.android.ble;
 
 import android.bluetooth.BluetoothGattCharacteristic;
 
+import androidx.annotation.NonNull;
+
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.UUID;
-
-import androidx.annotation.NonNull;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -77,7 +77,10 @@ public class RequestTest {
 
 	@Test
 	public void split_basic() {
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+
+		final byte[] value = text.getBytes();
+		final WriteRequest request = new WriteRequest(Request.Type.WRITE, characteristic, value, 0,
+				value != null ? value.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
 				.split();
 		chunk = request.getData(MTU);
 
@@ -92,7 +95,9 @@ public class RequestTest {
 	public void split_highMtu() {
 		final int MTU_HIGH = 276;
 
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
+		final byte[] value = text.getBytes();
+		final WriteRequest request = new WriteRequest(Request.Type.WRITE, characteristic, value, 0,
+				value != null ? value.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
 				.split();
 		chunk = request.getData(MTU_HIGH);
 		// Verify the chunk
@@ -105,7 +110,9 @@ public class RequestTest {
 	@Test
 	public void split_callbacks() {
 		// Create a WriteRequest with the default splitter and custom progress and success callbacks
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+		final byte[] value = text.getBytes();
+		final WriteRequest request = new WriteRequest(Request.Type.WRITE, characteristic, value, 0,
+				value != null ? value.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
 				.split((device, data, index) -> {
 					// Validate the progress callback
 					called = true;
@@ -144,12 +151,14 @@ public class RequestTest {
 	@Test
 	public void split_merge() {
 		// The WriteRequest is only to split the text into chunks
-		final WriteRequest request = Request.newWriteRequest(characteristic, text.getBytes(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+		final byte[] value = text.getBytes();
+		final WriteRequest request = new WriteRequest(Request.Type.WRITE, characteristic, value, 0,
+				value != null ? value.length : 0, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
 				.split();
 		request.handler = new SynchronousHandler();
 
 		// Create ReadRequest that will merge packets until the complete text is in the stream
-		final ReadRequest readRequest = Request.newReadRequest(characteristic)
+		final ReadRequest readRequest =  new ReadRequest(Request.Type.READ, characteristic)
 				.merge((output, lastPacket, index) -> {
 					// Simply copy all bytes from the lastPacket to the stream
 					output.write(lastPacket);
